@@ -39,7 +39,7 @@ def get_price_column(data):
 
 
 def create_price_chart(data, ticker, investment_amount):
-    """Create interactive price chart showing returns vs stock price"""
+    """Create interactive price chart showing investment value over time"""
     if data is None or data.empty:
         return None
     
@@ -50,7 +50,7 @@ def create_price_chart(data, ticker, investment_amount):
             st.error(f"Could not find price column in data for {ticker}")
             return None
         
-        # Calculate investment value and percentage returns over time
+        # Calculate investment value over time
         initial_price = data[close_col].iloc[0]
         if initial_price <= 0:
             st.error(f"Invalid initial price for {ticker}: {initial_price}")
@@ -58,30 +58,25 @@ def create_price_chart(data, ticker, investment_amount):
             
         shares = investment_amount / initial_price
         data['Investment_Value'] = data[close_col] * shares
-        data['Return_Percent'] = ((data[close_col] / initial_price) - 1) * 100
         
-        # Create subplot with secondary y-axis
         fig = go.Figure()
         
-        # Add percentage return line (primary chart)
+        # Add investment value line 
         fig.add_trace(go.Scatter(
             x=data.index,
-            y=data['Return_Percent'],
+            y=data['Investment_Value'],
             mode='lines',
-            name='Investment Return (%)',
+            name=f'{ticker} Investment Value',
             line=dict(color='#2E8B57', width=3),
             connectgaps=False,
-            hovertemplate='<b>Investment Return</b><br>' +
+            hovertemplate='<b>%{fullData.name}</b><br>' +
                          'Date: %{x}<br>' +
-                         'Return: %{y:.2f}%<br>' +
-                         'Investment Value: $%{customdata:.2f}<extra></extra>',
-            customdata=data['Investment_Value']
+                         'Value: $%{y:,.2f}<br>' +
+                         'Return: %{customdata:.2f}%<extra></extra>',
+            customdata=((data['Investment_Value'] / investment_amount - 1) * 100)
         ))
         
-        # Add a zero line for reference
-        fig.add_hline(y=0, line_dash="dot", line_color="gray", opacity=0.5)
-        
-        # Update layout with improved styling and dark mode support
+        # Update layout with clean styling
         fig.update_layout(
             title=dict(
                 text=f'{ticker} Investment Performance<br><sub>Initial Investment: ${investment_amount:,.0f} | Shares: {shares:.4f}</sub>',
@@ -91,27 +86,16 @@ def create_price_chart(data, ticker, investment_amount):
             xaxis=dict(
                 title='Date',
                 gridcolor='rgba(128,128,128,0.2)',
-                showgrid=True,
-                zeroline=False
+                showgrid=True
             ),
             yaxis=dict(
-                title='Return (%)',
+                title='Investment Value ($)',
                 gridcolor='rgba(128,128,128,0.2)',
-                showgrid=True,
-                zeroline=True,
-                zerolinecolor='rgba(128,128,128,0.5)',
-                zerolinewidth=1
+                showgrid=True
             ),
             hovermode='x unified',
             height=500,
-            showlegend=True,
-            legend=dict(
-                orientation="h",
-                yanchor="bottom",
-                y=1.02,
-                xanchor="center",
-                x=0.5
-            ),
+            showlegend=False,  # Hide legend for cleaner look
             # Dark mode compatible styling
             plot_bgcolor='rgba(0,0,0,0)',
             paper_bgcolor='rgba(0,0,0,0)',
@@ -119,7 +103,7 @@ def create_price_chart(data, ticker, investment_amount):
             margin=dict(t=80, b=50, l=50, r=50)
         )
         
-        # Responsive grid styling for dark/light mode
+        # Responsive grid styling
         fig.update_xaxes(
             showgrid=True,
             gridwidth=1,
@@ -272,6 +256,96 @@ def create_comparison_chart(stock_data, benchmark_data, ticker, investment_amoun
         
     except Exception as e:
         st.error(f"Error creating comparison chart: {str(e)}")
+        return None
+
+
+def create_yearly_comparison_chart(data, ticker):
+    """Create year-over-year comparison chart (2024 vs 2025)"""
+    if data is None or data.empty:
+        return None
+    
+    try:
+        close_col = get_price_column(data)
+        if close_col is None:
+            return None
+        
+        # Filter data for 2024 and 2025
+        data_2024 = data[data.index.year == 2024]
+        data_2025 = data[data.index.year == 2025]
+        
+        if len(data_2024) < 5 or len(data_2025) < 5:
+            return None  # Not enough data for comparison
+        
+        fig = go.Figure()
+        
+        # Normalize data to show percentage change from year start
+        if len(data_2024) > 0:
+            data_2024_norm = ((data_2024[close_col] / data_2024[close_col].iloc[0]) - 1) * 100
+            fig.add_trace(go.Scatter(
+                x=data_2024.index.dayofyear,
+                y=data_2024_norm,
+                mode='lines',
+                name='2024',
+                line=dict(color='#1f77b4', width=2),
+                hovertemplate='<b>2024</b><br>Day of Year: %{x}<br>Return: %{y:.2f}%<extra></extra>'
+            ))
+        
+        if len(data_2025) > 0:
+            data_2025_norm = ((data_2025[close_col] / data_2025[close_col].iloc[0]) - 1) * 100
+            fig.add_trace(go.Scatter(
+                x=data_2025.index.dayofyear,
+                y=data_2025_norm,
+                mode='lines',
+                name='2025',
+                line=dict(color='#ff7f0e', width=2),
+                hovertemplate='<b>2025</b><br>Day of Year: %{x}<br>Return: %{y:.2f}%<extra></extra>'
+            ))
+        
+        # Add zero line
+        fig.add_hline(y=0, line_dash="dot", line_color="gray", opacity=0.5)
+        
+        fig.update_layout(
+            title=f'{ticker} Year-over-Year Comparison (2024 vs 2025)',
+            xaxis=dict(
+                title='Day of Year',
+                gridcolor='rgba(128,128,128,0.2)',
+                showgrid=True
+            ),
+            yaxis=dict(
+                title='Return from Year Start (%)',
+                gridcolor='rgba(128,128,128,0.2)',
+                showgrid=True
+            ),
+            height=400,
+            showlegend=True,
+            legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                y=1.02,
+                xanchor="center",
+                x=0.5
+            ),
+            plot_bgcolor='rgba(0,0,0,0)',
+            paper_bgcolor='rgba(0,0,0,0)',
+            font=dict(color='rgba(128,128,128,1)'),
+            margin=dict(t=60, b=50, l=50, r=50)
+        )
+        
+        fig.update_xaxes(
+            showgrid=True,
+            gridwidth=1,
+            gridcolor='rgba(128,128,128,0.2)'
+        )
+        fig.update_yaxes(
+            showgrid=True,
+            gridwidth=1,
+            gridcolor='rgba(128,128,128,0.2)'
+        )
+        
+        return fig
+        
+    except Exception as e:
+        st.error(f"Error creating yearly comparison chart: {str(e)}")
         return None
 
 
