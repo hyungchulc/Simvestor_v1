@@ -169,13 +169,13 @@ with st.sidebar:
     # Investment parameters
     st.subheader("💰 Investment Parameters")
     
-    # Date selection
+    # Date selection - Extended range for more historical data
     max_date = datetime.now() - timedelta(days=1)
-    min_date = max_date - timedelta(days=365*5)
+    min_date = max_date - timedelta(days=365*10)  # 10 years of history
     
     start_date = st.date_input(
         "📅 Investment Start Date",
-        value=max_date - timedelta(days=365),
+        value=max_date - timedelta(days=365*2),  # Default to 2 years ago
         min_value=min_date,
         max_value=max_date,
         help="Choose when you would have invested"

@@ -51,7 +51,7 @@ def fetch_stock_data(ticker, start_date, end_date=None):
                 try:
                     logger.info(f"Downloading {ticker} data, attempt {attempt + 1}")
                     
-                    # Use yfinance download
+                    # Use yfinance download with extended period
                     data = yf.download(
                         ticker,
                         start=start_date_pd,
@@ -59,8 +59,13 @@ def fetch_stock_data(ticker, start_date, end_date=None):
                         progress=False,
                         auto_adjust=True,
                         prepost=False,
-                        threads=True
+                        threads=False  # Disable threading to avoid MultiIndex issues
                     )
+                    
+                    # Handle potential MultiIndex columns from yf.download
+                    if hasattr(data.columns, 'levels') and len(data.columns.levels) > 1:
+                        # Flatten MultiIndex columns - take the first level (metric name, not ticker)
+                        data.columns = [col[0] if isinstance(col, tuple) else col for col in data.columns]
                     
                     if data is not None and not data.empty:
                         # Filter by start date to ensure we get the right range
@@ -100,7 +105,8 @@ def fetch_stock_data(ticker, start_date, end_date=None):
                 status_text.text("📡 Trying Ticker object...")
                 
                 stock = yf.Ticker(ticker)
-                periods = ["1y", "6mo", "3mo", "1mo"]
+                # Extended periods for more historical data
+                periods = ["5y", "2y", "1y", "6mo", "3mo"]
                 
                 for i, period in enumerate(periods):
                     try:
@@ -140,10 +146,15 @@ def fetch_stock_data(ticker, start_date, end_date=None):
                 try:
                     data = yf.download(
                         ticker, 
-                        period="6mo",
+                        period="2y",  # Extended period for more data
                         progress=False,
-                        auto_adjust=True
+                        auto_adjust=True,
+                        threads=False  # Disable threading to avoid MultiIndex issues
                     )
+                    
+                    # Handle potential MultiIndex columns
+                    if hasattr(data.columns, 'levels') and len(data.columns.levels) > 1:
+                        data.columns = [col[0] if isinstance(col, tuple) else col for col in data.columns]
                     
                     if len(data) > 5:
                         progress_bar.progress(100)
@@ -279,8 +290,8 @@ def process_stock_data(data, ticker):
         
         # Handle MultiIndex columns from yfinance
         if hasattr(data.columns, 'levels') and len(data.columns.levels) > 1:
-            # Flatten MultiIndex columns - take the second level (metric name)
-            data.columns = [col[1] if isinstance(col, tuple) else col for col in data.columns]
+            # Flatten MultiIndex columns - take the first level (metric name, not ticker)
+            data.columns = [col[0] if isinstance(col, tuple) else col for col in data.columns]
         
         # Ensure we have basic price columns
         if 'Adj Close' not in data.columns and 'Close' in data.columns:

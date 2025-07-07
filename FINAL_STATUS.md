@@ -3,14 +3,22 @@
 ## ✅ Issues Successfully Fixed
 
 ### 1. **Column Access Error (KeyError: 'Adj Close')**
-- **Problem**: yfinance API changes caused different data structures (MultiIndex columns)
+- **Problem**: yfinance API changes caused MultiIndex columns like `[('Close', 'NVDA'), ('High', 'NVDA')]`
 - **Solution**: 
-  - Created robust `get_price_column()` helper function
-  - Added MultiIndex column handling in data processing
-  - Updated all analysis and visualization functions to use dynamic column detection
-  - Added fallback from 'Adj Close' to 'Close' to handle different data formats
+  - Fixed MultiIndex column flattening to extract metric names correctly (`col[0]` not `col[1]`)
+  - Created robust `get_price_column()` helper function with multiple fallback strategies
+  - Added comprehensive column detection for different yfinance data structures
+  - Disabled threading in `yf.download()` to prevent MultiIndex issues
 
-### 2. **Missing Progress Bar**
+### 2. **Limited Historical Data (Only 250 days)**
+- **Problem**: Default date range was limited to 1 year
+- **Solution**:
+  - Extended date selection to **10 years of history** (min_date)
+  - Default start date now **2 years ago** (instead of 1 year)
+  - Added longer fallback periods: `["5y", "2y", "1y", "6mo", "3mo"]`
+  - Extended minimal download period from 6mo to 2y
+
+### 3. **Missing Progress Bar**
 - **Problem**: `st.spinner()` wrapper was hiding progress indicators
 - **Solution**: 
   - Removed spinner wrappers around data fetching
@@ -18,7 +26,7 @@
   - Added status messages and rate limit handling with exponential backoff
   - Progress bars now properly clean up after completion
 
-### 3. **Code Modularity & Maintenance**
+### 4. **Code Modularity & Maintenance**
 - **Problem**: Monolithic app.py was difficult to maintain and update
 - **Solution**: 
   - Created clean modular architecture with organized code structure
@@ -59,7 +67,8 @@ SimVestor/
 
 ### ✅ Working Features
 - **Progress Bar**: Visible during data fetching with status updates
-- **Data Fetching**: Robust handling of different yfinance data structures
+- **Extended Data**: Up to 10 years of historical data (default 2 years)
+- **Data Fetching**: Robust handling of MultiIndex columns from yfinance
 - **Portfolio Management**: Add, track, and compare investments
 - **News Fetching**: Recent news with rate limit handling
 - **Export Functionality**: Download analysis results as JSON/CSV
@@ -70,7 +79,9 @@ SimVestor/
 - **Theme Selection**: 80+ investment themes across 10 categories
 
 ### 🔧 Technical Improvements
-- **Flexible Column Handling**: Works with different yfinance data formats
+- **MultiIndex Column Handling**: Correctly processes yfinance data changes
+- **Extended Historical Data**: Support for up to 10 years of data
+- **Flexible Column Detection**: Works with different yfinance data formats
 - **Rate Limit Resilience**: Exponential backoff and retry logic
 - **Error Handling**: Comprehensive error management per module
 - **Performance**: Optimized data processing and caching
