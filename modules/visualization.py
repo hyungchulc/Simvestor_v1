@@ -39,7 +39,7 @@ def get_price_column(data):
 
 
 def create_price_chart(data, ticker, investment_amount):
-    """Create interactive price chart"""
+    """Create interactive price chart showing returns vs stock price"""
     if data is None or data.empty:
         return None
     
@@ -50,7 +50,7 @@ def create_price_chart(data, ticker, investment_amount):
             st.error(f"Could not find price column in data for {ticker}")
             return None
         
-        # Calculate investment value over time
+        # Calculate investment value and percentage returns over time
         initial_price = data[close_col].iloc[0]
         if initial_price <= 0:
             st.error(f"Invalid initial price for {ticker}: {initial_price}")
@@ -58,85 +58,220 @@ def create_price_chart(data, ticker, investment_amount):
             
         shares = investment_amount / initial_price
         data['Investment_Value'] = data[close_col] * shares
+        data['Return_Percent'] = ((data[close_col] / initial_price) - 1) * 100
         
+        # Create subplot with secondary y-axis
         fig = go.Figure()
         
-        # Add price line (left y-axis)
+        # Add percentage return line (primary chart)
         fig.add_trace(go.Scatter(
             x=data.index,
-            y=data[close_col],
+            y=data['Return_Percent'],
             mode='lines',
-            name=f'{ticker} Price',
-            line=dict(color='#1f77b4', width=2),
-            yaxis='y',
-            hovertemplate='<b>%{fullData.name}</b><br>' +
+            name='Investment Return (%)',
+            line=dict(color='#2E8B57', width=3),
+            connectgaps=False,
+            hovertemplate='<b>Investment Return</b><br>' +
                          'Date: %{x}<br>' +
-                         'Price: $%{y:.2f}<extra></extra>'
+                         'Return: %{y:.2f}%<br>' +
+                         'Investment Value: $%{customdata:.2f}<extra></extra>',
+            customdata=data['Investment_Value']
         ))
         
-        # Add investment value line (right y-axis)
-        fig.add_trace(go.Scatter(
-            x=data.index,
-            y=data['Investment_Value'],
-            mode='lines',
-            name='Investment Value',
-            line=dict(color='#ff7f0e', width=2),
-            yaxis='y2',
-            hovertemplate='<b>%{fullData.name}</b><br>' +
-                         'Date: %{x}<br>' +
-                         'Value: $%{y:.2f}<extra></extra>'
-        ))
+        # Add a zero line for reference
+        fig.add_hline(y=0, line_dash="dot", line_color="gray", opacity=0.5)
         
-        # Calculate price range for better y-axis scaling
-        price_range = data[close_col].max() - data[close_col].min()
-        price_padding = price_range * 0.1
-        
-        investment_range = data['Investment_Value'].max() - data['Investment_Value'].min()
-        investment_padding = investment_range * 0.1
-        
-        # Update layout with better formatting
+        # Update layout with improved styling and dark mode support
         fig.update_layout(
-            title=f'{ticker} Performance Analysis<br><sub>Initial Investment: ${investment_amount:,.0f} | Shares: {shares:.2f}</sub>',
-            xaxis_title='Date',
-            yaxis=dict(
-                title=dict(
-                    text='Stock Price ($)',
-                    font=dict(color='#1f77b4', size=14)
-                ),
-                tickfont=dict(color='#1f77b4'),
-                range=[data[close_col].min() - price_padding, data[close_col].max() + price_padding]
+            title=dict(
+                text=f'{ticker} Investment Performance<br><sub>Initial Investment: ${investment_amount:,.0f} | Shares: {shares:.4f}</sub>',
+                font=dict(size=16),
+                x=0.5
             ),
-            yaxis2=dict(
-                title=dict(
-                    text='Investment Value ($)',
-                    font=dict(color='#ff7f0e', size=14)
-                ),
-                tickfont=dict(color='#ff7f0e'),
-                overlaying='y',
-                side='right',
-                range=[data['Investment_Value'].min() - investment_padding, data['Investment_Value'].max() + investment_padding]
+            xaxis=dict(
+                title='Date',
+                gridcolor='rgba(128,128,128,0.2)',
+                showgrid=True,
+                zeroline=False
+            ),
+            yaxis=dict(
+                title='Return (%)',
+                gridcolor='rgba(128,128,128,0.2)',
+                showgrid=True,
+                zeroline=True,
+                zerolinecolor='rgba(128,128,128,0.5)',
+                zerolinewidth=1
             ),
             hovermode='x unified',
             height=500,
             showlegend=True,
             legend=dict(
-                yanchor="top",
-                y=0.99,
-                xanchor="left",
-                x=0.01
+                orientation="h",
+                yanchor="bottom",
+                y=1.02,
+                xanchor="center",
+                x=0.5
             ),
+            # Dark mode compatible styling
             plot_bgcolor='rgba(0,0,0,0)',
-            paper_bgcolor='rgba(0,0,0,0)'
+            paper_bgcolor='rgba(0,0,0,0)',
+            font=dict(color='rgba(128,128,128,1)'),
+            margin=dict(t=80, b=50, l=50, r=50)
         )
         
-        # Add grid
-        fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor='lightgray')
-        fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='lightgray')
+        # Responsive grid styling for dark/light mode
+        fig.update_xaxes(
+            showgrid=True,
+            gridwidth=1,
+            gridcolor='rgba(128,128,128,0.2)',
+            showline=True,
+            linewidth=1,
+            linecolor='rgba(128,128,128,0.3)'
+        )
+        fig.update_yaxes(
+            showgrid=True,
+            gridwidth=1,
+            gridcolor='rgba(128,128,128,0.2)',
+            showline=True,
+            linewidth=1,
+            linecolor='rgba(128,128,128,0.3)'
+        )
         
         return fig
         
     except Exception as e:
         st.error(f"Error creating price chart for {ticker}: {str(e)}")
+        return None
+
+
+def create_comparison_chart(stock_data, benchmark_data, ticker, investment_amount):
+    """Create comparison chart between stock and benchmark (S&P 500)"""
+    if stock_data is None or stock_data.empty or benchmark_data is None or benchmark_data.empty:
+        return None
+    
+    try:
+        # Get price columns for both datasets
+        stock_close_col = get_price_column(stock_data)
+        benchmark_close_col = get_price_column(benchmark_data)
+        
+        if stock_close_col is None or benchmark_close_col is None:
+            st.error("Could not find price columns for comparison")
+            return None
+        
+        # Calculate normalized returns (starting from 100%)
+        stock_initial = stock_data[stock_close_col].iloc[0]
+        benchmark_initial = benchmark_data[benchmark_close_col].iloc[0]
+        
+        # Align dates by getting common date range
+        common_dates = stock_data.index.intersection(benchmark_data.index)
+        if len(common_dates) < 10:
+            st.error("Not enough overlapping data for comparison")
+            return None
+        
+        stock_aligned = stock_data.loc[common_dates]
+        benchmark_aligned = benchmark_data.loc[common_dates]
+        
+        # Calculate percentage returns from start date
+        stock_returns = ((stock_aligned[stock_close_col] / stock_aligned[stock_close_col].iloc[0]) - 1) * 100
+        benchmark_returns = ((benchmark_aligned[benchmark_close_col] / benchmark_aligned[benchmark_close_col].iloc[0]) - 1) * 100
+        
+        fig = go.Figure()
+        
+        # Add stock performance
+        fig.add_trace(go.Scatter(
+            x=common_dates,
+            y=stock_returns,
+            mode='lines',
+            name=f'{ticker}',
+            line=dict(color='#2E8B57', width=3),
+            connectgaps=False,
+            hovertemplate='<b>%{fullData.name}</b><br>' +
+                         'Date: %{x}<br>' +
+                         'Return: %{y:.2f}%<extra></extra>'
+        ))
+        
+        # Add benchmark performance
+        fig.add_trace(go.Scatter(
+            x=common_dates,
+            y=benchmark_returns,
+            mode='lines',
+            name='S&P 500 (SPY)',
+            line=dict(color='#DC143C', width=2, dash='dash'),
+            connectgaps=False,
+            hovertemplate='<b>%{fullData.name}</b><br>' +
+                         'Date: %{x}<br>' +
+                         'Return: %{y:.2f}%<extra></extra>'
+        ))
+        
+        # Add zero line for reference
+        fig.add_hline(y=0, line_dash="dot", line_color="gray", opacity=0.5)
+        
+        # Calculate final returns for subtitle
+        final_stock_return = stock_returns.iloc[-1]
+        final_benchmark_return = benchmark_returns.iloc[-1]
+        outperformance = final_stock_return - final_benchmark_return
+        
+        fig.update_layout(
+            title=dict(
+                text=f'{ticker} vs S&P 500 Performance Comparison<br>' +
+                     f'<sub>{ticker}: {final_stock_return:+.2f}% | S&P 500: {final_benchmark_return:+.2f}% | ' +
+                     f'Alpha: {outperformance:+.2f}%</sub>',
+                font=dict(size=16),
+                x=0.5
+            ),
+            xaxis=dict(
+                title='Date',
+                gridcolor='rgba(128,128,128,0.2)',
+                showgrid=True,
+                zeroline=False
+            ),
+            yaxis=dict(
+                title='Cumulative Return (%)',
+                gridcolor='rgba(128,128,128,0.2)',
+                showgrid=True,
+                zeroline=True,
+                zerolinecolor='rgba(128,128,128,0.5)',
+                zerolinewidth=1
+            ),
+            hovermode='x unified',
+            height=500,
+            showlegend=True,
+            legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                y=1.02,
+                xanchor="center",
+                x=0.5
+            ),
+            # Dark mode compatible styling
+            plot_bgcolor='rgba(0,0,0,0)',
+            paper_bgcolor='rgba(0,0,0,0)',
+            font=dict(color='rgba(128,128,128,1)'),
+            margin=dict(t=100, b=50, l=50, r=50)
+        )
+        
+        # Responsive grid styling
+        fig.update_xaxes(
+            showgrid=True,
+            gridwidth=1,
+            gridcolor='rgba(128,128,128,0.2)',
+            showline=True,
+            linewidth=1,
+            linecolor='rgba(128,128,128,0.3)'
+        )
+        fig.update_yaxes(
+            showgrid=True,
+            gridwidth=1,
+            gridcolor='rgba(128,128,128,0.2)',
+            showline=True,
+            linewidth=1,
+            linecolor='rgba(128,128,128,0.3)'
+        )
+        
+        return fig
+        
+    except Exception as e:
+        st.error(f"Error creating comparison chart: {str(e)}")
         return None
 
 

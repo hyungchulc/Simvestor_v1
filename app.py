@@ -19,7 +19,7 @@ from modules.data_fetcher import fetch_stock_data, validate_data_quality
 from modules.analysis import calculate_returns, calculate_technical_indicators, generate_investment_insights, simple_prediction_model, ML_AVAILABLE, get_price_column
 from modules.news import get_stock_news
 from modules.portfolio import add_to_portfolio, compare_portfolio_performance, create_portfolio_comparison_chart, get_market_benchmark_data, calculate_benchmark_comparison
-from modules.visualization import create_price_chart, create_data_quality_report, format_technical_indicators, display_company_info
+from modules.visualization import create_price_chart, create_data_quality_report, format_technical_indicators, display_company_info, create_comparison_chart
 from modules.utils import get_theme_dictionary, export_results_to_json
 
 # Page configuration
@@ -342,6 +342,7 @@ if run_simulation:
                         if benchmark_data is not None:
                             comparison = calculate_benchmark_comparison(returns, benchmark_data, investment_amount)
                             st.session_state.comparison_results = comparison
+                            st.session_state.benchmark_data = benchmark_data
                             st.success("✅ Benchmark comparison completed!")
                         else:
                             st.error("❌ Could not fetch benchmark data")
@@ -374,9 +375,15 @@ if run_simulation:
                 with bench_col3:
                     rel_vol = comp.get('relative_volatility', 0)
                     st.metric("Relative Volatility", f"{rel_vol:+.2f}%")
+                
+                # Show comparison chart if benchmark data is available
+                if hasattr(st.session_state, 'benchmark_data') and st.session_state.benchmark_data is not None:
+                    comparison_chart = create_comparison_chart(data, st.session_state.benchmark_data, ticker, investment_amount)
+                    if comparison_chart:
+                        st.plotly_chart(comparison_chart, use_container_width=True, key="benchmark_comparison_chart")
             
             # Price chart
-            st.subheader("📈 Price & Investment Performance")
+            st.subheader("📈 Investment Performance Analysis")
             price_chart = create_price_chart(data, ticker, investment_amount)
             if price_chart:
                 st.plotly_chart(price_chart, use_container_width=True, key="main_price_chart")
@@ -400,24 +407,56 @@ if run_simulation:
                     st.write(f"• {insight}")
             
             with tab3:
-                if st.button("📰 Fetch Latest News", help="Get recent news for this stock", key="fetch_news"):
-                    with st.spinner("Fetching news..."):
-                        news_articles = get_stock_news(ticker, limit=5)
-                        
-                        if news_articles:
-                            for i, article in enumerate(news_articles):
-                                with st.expander(f"📰 {article['title'][:100]}..."):
-                                    st.write(f"**Publisher:** {article['publisher']}")
-                                    if article['published']:
+                st.write("**📰 Recent News & Market Updates**")
+                
+                # Auto-fetch news if not already cached for this ticker
+                news_cache_key = f"news_{ticker}"
+                
+                if news_cache_key not in st.session_state:
+                    with st.spinner("Fetching latest news..."):
+                        st.session_state[news_cache_key] = get_stock_news(ticker, limit=6)
+                
+                news_articles = st.session_state.get(news_cache_key, [])
+                
+                # Refresh button
+                col_news1, col_news2 = st.columns([3, 1])
+                with col_news2:
+                    if st.button("🔄 Refresh", help="Fetch latest news", key="refresh_news"):
+                        with st.spinner("Refreshing news..."):
+                            st.session_state[news_cache_key] = get_stock_news(ticker, limit=6)
+                            news_articles = st.session_state[news_cache_key]
+                            st.rerun()
+                
+                if news_articles:
+                    st.success(f"Found {len(news_articles)} recent articles")
+                    
+                    for i, article in enumerate(news_articles):
+                        with st.expander(f"📰 {article['title'][:80]}{'...' if len(article['title']) > 80 else ''}", expanded=i==0):
+                            col_info1, col_info2 = st.columns([2, 1])
+                            
+                            with col_info1:
+                                st.write(f"**Publisher:** {article['publisher']}")
+                            
+                            with col_info2:
+                                if article['published'] and article['published'] > 0:
+                                    try:
                                         pub_date = datetime.fromtimestamp(article['published'])
                                         st.write(f"**Published:** {pub_date.strftime('%Y-%m-%d %H:%M')}")
-                                    st.write(article['summary'])
-                                    if article['link']:
-                                        st.markdown(f"[Read more]({article['link']})")
-                        else:
-                            st.info("No recent news found for this ticker.")
+                                    except:
+                                        st.write("**Published:** Recently")
+                                else:
+                                    st.write("**Published:** Recently")
+                            
+                            st.write(article['summary'])
+                            
+                            if article['link']:
+                                st.markdown(f"**[📖 Read Full Article]({article['link']})**")
                 else:
-                    st.info("Click the button above to fetch the latest news for this stock.")
+                    st.warning("⚠️ No recent news found for this ticker.")
+                    st.info("💡 **Tips:** News availability varies by ticker. Try:")
+                    st.write("• Large cap stocks (like AAPL, MSFT, GOOGL) typically have more news")
+                    st.write("• Click 'Refresh' to try fetching again")
+                    st.write("• Check if the ticker symbol is correct")
             
             with tab4:
                 st.write("**Detailed Performance Metrics**")
@@ -516,7 +555,7 @@ if run_simulation:
                 st.error("Machine learning libraries not available. Please install scikit-learn to enable predictions.")
 
 # Portfolio comparison section
-elif st.session_state.portfolio:
+elif hasattr(st.session_state, 'portfolio') and st.session_state.portfolio:
     st.subheader("📊 Portfolio Performance Comparison")
     
     # Create tabs for different views
