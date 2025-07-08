@@ -1,6 +1,6 @@
 # SimVestor - AI-Powered Thematic Investment Simulator
 
-[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://simvestor.streamlit.app)
+[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)]([https://simvestor.streamlit.app](https://simvestor-v1.streamlit.app/))
 
 ## 🚀 Overview
 
