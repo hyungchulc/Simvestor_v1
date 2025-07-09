@@ -241,15 +241,37 @@ with st.sidebar:
         st.success("✅ App reset successfully!")
         st.rerun()
 
+# Check for quick ticker simulation
+if 'run_quick_simulation' in st.session_state and st.session_state.run_quick_simulation:
+    if 'quick_ticker' in st.session_state:
+        ticker = st.session_state.quick_ticker
+        run_simulation = True
+        # Clear the quick simulation flags
+        st.session_state.run_quick_simulation = False
+        del st.session_state.quick_ticker
+
 # Main content area
-if run_simulation:
-    st.session_state.simulation_run = True
-    st.session_state.last_ticker = ticker
-    
-    st.subheader(f"📊 Analysis Results for {ticker}")
-    
-    # Fetch data - progress bar is handled within the function
-    data, stock_info = fetch_stock_data(ticker, start_date)
+# Main content area
+if run_simulation or (st.session_state.get('simulation_run', False) and st.session_state.get('last_results') is not None):
+    # If we're rerunning from session state, use stored data
+    if not run_simulation and st.session_state.get('last_results') is not None:
+        # Use stored results
+        stored_results = st.session_state['last_results']
+        data = stored_results['data']
+        stock_info = stored_results['stock_info']
+        ticker = stored_results['ticker']
+        investment_amount = stored_results['investment_amount']
+        start_date = stored_results['start_date']
+        st.subheader(f"📊 Analysis Results for {ticker}")
+    else:
+        # Fresh simulation run
+        st.session_state.simulation_run = True
+        st.session_state.last_ticker = ticker
+        
+        st.subheader(f"📊 Analysis Results for {ticker}")
+        
+        # Fetch data - progress bar is handled within the function
+        data, stock_info = fetch_stock_data(ticker, start_date)
     
     if data is None:
         st.error(f"❌ Could not fetch data for {ticker}. Please try:")
@@ -273,17 +295,19 @@ if run_simulation:
         for i, alt_ticker in enumerate(popular_tickers):
             with cols[i]:
                 if st.button(alt_ticker, key=f"alt_{alt_ticker}"):
-                    st.session_state.temp_ticker = alt_ticker
-                    st.rerun()
+                    # Set the ticker directly and trigger simulation
+                    st.session_state.quick_ticker = alt_ticker
+                    st.session_state.run_quick_simulation = True
     else:
-        # Store results in session state
-        st.session_state.last_results = {
-            'data': data,
-            'stock_info': stock_info,
-            'ticker': ticker,
-            'investment_amount': investment_amount,
-            'start_date': start_date
-        }
+        # Store results in session state only for fresh simulations
+        if run_simulation:
+            st.session_state.last_results = {
+                'data': data,
+                'stock_info': stock_info,
+                'ticker': ticker,
+                'investment_amount': investment_amount,
+                'start_date': start_date
+            }
         
         # Data quality check
         quality_report = validate_data_quality(data, ticker)
@@ -377,15 +401,30 @@ if run_simulation:
                 comparison_button_key = f"compare_sp500_{ticker}"
                 if st.button("📊 Compare vs S&P 500", help="Compare performance against market benchmark", key=comparison_button_key):
                     with st.spinner("Fetching S&P 500 benchmark data..."):
-                        benchmark_data = get_market_benchmark_data(start_date)
-                        if benchmark_data is not None:
-                            comparison = calculate_benchmark_comparison(returns, benchmark_data, investment_amount)
-                            # Store with ticker-specific keys to prevent mixing
-                            st.session_state[f'comparison_results_{ticker}'] = comparison
-                            st.session_state[f'benchmark_data_{ticker}'] = benchmark_data
-                            st.success("✅ Benchmark comparison completed!")
-                        else:
-                            st.error("❌ Could not fetch benchmark data")
+                        try:
+                            logger.info(f"Starting S&P 500 comparison for {ticker}")
+                            benchmark_data = get_market_benchmark_data(start_date)
+                            
+                            if benchmark_data is not None and not benchmark_data.empty:
+                                logger.info(f"Benchmark data fetched successfully: {len(benchmark_data)} rows")
+                                
+                                comparison = calculate_benchmark_comparison(returns, benchmark_data, investment_amount)
+                                
+                                if comparison and len(comparison) > 0:
+                                    # Store with ticker-specific keys to prevent mixing
+                                    st.session_state[f'comparison_results_{ticker}'] = comparison
+                                    st.session_state[f'benchmark_data_{ticker}'] = benchmark_data
+                                    st.success("✅ Benchmark comparison completed! Scroll down to see results.")
+                                else:
+                                    st.error("❌ Could not calculate benchmark comparison metrics")
+                                    logger.error("Benchmark comparison returned empty result")
+                            else:
+                                st.error("❌ Could not fetch S&P 500 data. Please check your internet connection and try again.")
+                                logger.error("Benchmark data fetch returned None or empty DataFrame")
+                                
+                        except Exception as e:
+                            st.error(f"❌ Error during benchmark comparison: {str(e)}")
+                            logger.error(f"Benchmark comparison error: {str(e)}", exc_info=True)
             
             with col3:
                 if st.button("💾 Export Results", help="Download analysis as JSON"):
@@ -401,29 +440,62 @@ if run_simulation:
             comp_key = f'comparison_results_{ticker}'
             bench_key = f'benchmark_data_{ticker}'
             
-            if comp_key in st.session_state and st.session_state[comp_key]:
-                st.subheader("📊 Benchmark Comparison")
+            if comp_key in st.session_state and st.session_state[comp_key] and len(st.session_state[comp_key]) > 0:
+                # Add anchor for smooth scrolling/navigation
+                st.markdown("---")
+                st.subheader("📊 S&P 500 Benchmark Comparison")
                 comp = st.session_state[comp_key]
                 
-                bench_col1, bench_col2, bench_col3 = st.columns(3)
+                # Display comparison metrics in enhanced layout
+                bench_col1, bench_col2, bench_col3, bench_col4 = st.columns(4)
                 
                 with bench_col1:
-                    st.metric("S&P 500 Return", f"{comp.get('benchmark_return', 0):.2f}%")
+                    benchmark_return = comp.get('benchmark_return', 0)
+                    st.metric("S&P 500 Return", f"{benchmark_return:.2f}%")
                 
                 with bench_col2:
                     alpha = comp.get('alpha', 0)
+                    delta_indicator = "📈" if alpha > 0 else "📉"
                     st.metric("Alpha (Outperformance)", f"{alpha:+.2f}%", 
-                             delta="Outperformed" if alpha > 0 else "Underperformed")
+                             delta=f"{delta_indicator} vs S&P 500")
                 
                 with bench_col3:
+                    stock_vol = returns.get('volatility', 0)
+                    bench_vol = comp.get('benchmark_volatility', 0)
+                    st.metric("Stock Volatility", f"{stock_vol:.2f}%", 
+                             delta=f"S&P 500: {bench_vol:.2f}%")
+                
+                with bench_col4:
                     rel_vol = comp.get('relative_volatility', 0)
-                    st.metric("Relative Volatility", f"{rel_vol:+.2f}%")
+                    risk_text = "Higher Risk" if rel_vol > 0 else "Lower Risk"
+                    st.metric("Risk vs Market", risk_text, 
+                             delta=f"{rel_vol:+.2f}% volatility")
+                
+                # Performance summary with visual indicators
+                alpha = comp.get('alpha', 0)
+                if alpha > 5:
+                    st.success(f"🎉 **Excellent Performance!** {ticker} significantly outperformed the S&P 500 by **{alpha:.2f}%**")
+                elif alpha > 0:
+                    st.success(f"👍 **Good Performance!** {ticker} outperformed the S&P 500 by **{alpha:.2f}%**")
+                elif alpha > -5:
+                    st.warning(f"📊 **Close Performance** {ticker} underperformed the S&P 500 by **{abs(alpha):.2f}%**")
+                else:
+                    st.error(f"📉 **Underperformance** {ticker} significantly underperformed the S&P 500 by **{abs(alpha):.2f}%**")
                 
                 # Show comparison chart if benchmark data is available
                 if bench_key in st.session_state and st.session_state[bench_key] is not None:
+                    st.subheader("📈 Performance Comparison Chart")
                     comparison_chart = create_comparison_chart(data, st.session_state[bench_key], ticker, investment_amount)
                     if comparison_chart:
                         st.plotly_chart(comparison_chart, use_container_width=True, key=f"benchmark_comparison_chart_{ticker}")
+                    else:
+                        st.warning("Could not create comparison chart - insufficient overlapping data")
+                
+                # Clear comparison button
+                if st.button("🗑️ Clear Comparison", key=f"clear_comparison_{ticker}", help="Remove this comparison"):
+                    del st.session_state[comp_key]
+                    del st.session_state[bench_key]
+                    st.success("Comparison cleared! The results will disappear on next interaction.")
             
             # Price chart
             st.subheader("📈 Investment Performance Analysis")
@@ -467,20 +539,35 @@ if run_simulation:
                 # Initialize news if not present
                 if news_cache_key not in st.session_state:
                     with st.spinner("Fetching latest news..."):
-                        news_data = get_stock_news(ticker, limit=6)
-                        st.session_state[news_cache_key] = news_data
-                        st.session_state[f"{news_cache_key}_fetched"] = True
+                        try:
+                            news_data = get_stock_news(ticker, limit=6)
+                            st.session_state[news_cache_key] = news_data
+                            st.session_state[f"{news_cache_key}_fetched"] = True
+                            logger.info(f"Initial news fetch for {ticker}: {len(news_data)} articles")
+                        except Exception as e:
+                            logger.error(f"Error fetching initial news for {ticker}: {str(e)}")
+                            st.session_state[news_cache_key] = []
                 
                 news_articles = st.session_state.get(news_cache_key, [])
                 
                 # Refresh button
                 col_news1, col_news2 = st.columns([3, 1])
                 with col_news2:
-                    if st.button("🔄 Refresh", help="Fetch latest news", key="refresh_news"):
+                    refresh_key = f"refresh_news_{ticker}"
+                    if st.button("🔄 Refresh", help="Fetch latest news", key=refresh_key):
                         with st.spinner("Refreshing news..."):
-                            fresh_news = get_stock_news(ticker, limit=6)
-                            st.session_state[news_cache_key] = fresh_news
-                            news_articles = fresh_news
+                            try:
+                                fresh_news = get_stock_news(ticker, limit=6)
+                                st.session_state[news_cache_key] = fresh_news
+                                news_articles = fresh_news
+                                st.success(f"News refreshed! Found {len(fresh_news)} articles")
+                                logger.info(f"News refresh for {ticker}: {len(fresh_news)} articles")
+                            except Exception as e:
+                                logger.error(f"Error refreshing news for {ticker}: {str(e)}")
+                                st.error("Failed to refresh news. Please try again.")
+                
+                # Update news_articles after potential refresh
+                news_articles = st.session_state.get(news_cache_key, [])
                 
                 if news_articles and len(news_articles) > 0:
                     st.success(f"Found {len(news_articles)} recent articles")

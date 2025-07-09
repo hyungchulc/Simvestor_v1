@@ -108,12 +108,12 @@ def get_market_benchmark_data(start_date: datetime) -> Optional[pd.DataFrame]:
     """Get S&P 500 data for benchmarking"""
     try:
         logger.info(f"Fetching SPY benchmark data from {start_date}")
-        spy_data, error = fetch_stock_data("SPY", start_date)
-        if spy_data is not None:
+        spy_data, spy_info = fetch_stock_data("SPY", start_date)
+        if spy_data is not None and not spy_data.empty:
             logger.info(f"Successfully fetched {len(spy_data)} days of SPY data")
             return spy_data
         else:
-            logger.error(f"Failed to fetch SPY data: {error}")
+            logger.error(f"Failed to fetch SPY data - no data returned")
             return None
     except Exception as e:
         logger.error(f"Error fetching benchmark data: {str(e)}")
@@ -124,19 +124,33 @@ def calculate_benchmark_comparison(returns: dict, benchmark_data: pd.DataFrame,
                                 investment_amount: float) -> dict:
     """Compare performance against S&P 500 benchmark"""
     try:
+        if benchmark_data is None or benchmark_data.empty:
+            logger.error("No benchmark data provided for comparison")
+            return {}
+        
+        logger.info(f"Calculating benchmark comparison with {len(benchmark_data)} days of data")
         benchmark_returns = calculate_returns(benchmark_data, investment_amount)
+        
         if benchmark_returns is None:
+            logger.error("Could not calculate benchmark returns")
             return {}
         
         alpha = returns['percent_return'] - benchmark_returns['percent_return']
         
-        return {
+        result = {
             'benchmark_return': benchmark_returns['percent_return'],
             'alpha': alpha,
             'outperformed': alpha > 0,
             'benchmark_volatility': benchmark_returns['volatility'],
-            'relative_volatility': returns['volatility'] - benchmark_returns['volatility']
+            'relative_volatility': returns['volatility'] - benchmark_returns['volatility'],
+            'benchmark_initial_price': benchmark_returns['initial_price'],
+            'benchmark_final_price': benchmark_returns['final_price'],
+            'benchmark_final_value': benchmark_returns['final_value']
         }
+        
+        logger.info(f"Benchmark comparison completed: Alpha = {alpha:.2f}%")
+        return result
+        
     except Exception as e:
         logger.error(f"Error calculating benchmark comparison: {str(e)}")
         return {}
