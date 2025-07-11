@@ -11,6 +11,22 @@ from typing import List, Dict
 logger = logging.getLogger(__name__)
 
 
+def safe_get_string(data, default: str = '') -> str:
+    """Safely extract string from data that might be dict, list, or other types"""
+    if isinstance(data, str):
+        return data.strip()
+    elif isinstance(data, dict):
+        # If it's a dict, try to get meaningful string representation
+        return data.get('text', data.get('title', data.get('name', str(data))))
+    elif isinstance(data, list) and len(data) > 0:
+        # If it's a list, get the first item
+        return safe_get_string(data[0], default)
+    elif data is not None:
+        return str(data).strip()
+    else:
+        return default
+
+
 def get_stock_news(ticker: str, limit: int = 5) -> List[Dict]:
     """Get recent news for a stock ticker with improved error handling"""
     try:
@@ -81,33 +97,37 @@ def get_stock_news(ticker: str, limit: int = 5) -> List[Dict]:
                 logger.debug(f"Raw article {i}: {article}")
                 
                 # Try different possible field names for title
-                title = (article.get('title') or 
-                        article.get('headline') or 
-                        article.get('name') or 
-                        article.get('text', '') or '').strip()
+                title_raw = (article.get('title') or 
+                           article.get('headline') or 
+                           article.get('name') or 
+                           article.get('text', '') or '')
+                title = safe_get_string(title_raw, f'Financial News Update #{i+1}')
                 
-                if not title:
+                if not title or title == f'Financial News Update #{i+1}':
                     title = f'Financial News Update #{i+1}'
                 
                 # Try different possible field names for publisher
-                publisher = (article.get('publisher') or 
-                           article.get('source') or 
-                           article.get('provider') or 
-                           article.get('site', '') or
-                           'Financial News Source').strip()
+                publisher_raw = (article.get('publisher') or 
+                               article.get('source') or 
+                               article.get('provider') or 
+                               article.get('site', '') or
+                               'Financial News Source')
+                publisher = safe_get_string(publisher_raw, 'Financial News Source')
                 
                 # Try different possible field names for link
-                link = (article.get('link') or 
-                       article.get('url') or 
-                       article.get('href') or 
-                       article.get('uuid', '') or '').strip()
+                link_raw = (article.get('link') or 
+                          article.get('url') or 
+                          article.get('href') or 
+                          article.get('uuid', '') or '')
+                link = safe_get_string(link_raw, '')
                 
                 # Try different possible field names for summary
-                summary = (article.get('summary') or 
-                          article.get('description') or 
-                          article.get('snippet') or 
-                          article.get('content') or 
-                          article.get('text', '') or '').strip()
+                summary_raw = (article.get('summary') or 
+                             article.get('description') or 
+                             article.get('snippet') or 
+                             article.get('content') or 
+                             article.get('text', '') or '')
+                summary = safe_get_string(summary_raw, '')
                 
                 # If still no summary, create a basic one
                 if not summary:

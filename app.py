@@ -14,13 +14,24 @@ import plotly.graph_objects as go
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Import custom modules
-from modules.data_fetcher import fetch_stock_data, validate_data_quality
-from modules.analysis import calculate_returns, calculate_technical_indicators, generate_investment_insights, simple_prediction_model, ML_AVAILABLE, get_price_column
-from modules.news import get_stock_news
-from modules.portfolio import add_to_portfolio, compare_portfolio_performance, create_portfolio_comparison_chart, get_market_benchmark_data, calculate_benchmark_comparison
-from modules.visualization import create_price_chart, create_data_quality_report, format_technical_indicators, display_company_info, create_comparison_chart, create_yearly_comparison_chart
-from modules.utils import get_theme_dictionary, export_results_to_json
+# Enhanced error handling for modules
+try:
+    # Import custom modules
+    from modules.data_fetcher import fetch_stock_data, validate_data_quality
+    from modules.analysis import calculate_returns, calculate_technical_indicators, generate_investment_insights, simple_prediction_model, ML_AVAILABLE, get_price_column
+    from modules.news import get_stock_news
+    from modules.portfolio import add_to_portfolio, compare_portfolio_performance, create_portfolio_comparison_chart, get_market_benchmark_data, calculate_benchmark_comparison
+    from modules.visualization import create_price_chart, create_data_quality_report, format_technical_indicators, display_company_info, create_comparison_chart, create_yearly_comparison_chart
+    from modules.utils import get_theme_dictionary, export_results_to_json
+    logger.info("All modules imported successfully")
+except ImportError as e:
+    st.error(f"❌ **Module Import Error**: {str(e)}")
+    st.error("Please make sure all required modules are available in the 'modules' directory.")
+    st.stop()
+except Exception as e:
+    st.error(f"❌ **Unexpected Error During Import**: {str(e)}")
+    logger.error(f"Module import error: {str(e)}", exc_info=True)
+    st.stop()
 
 # Page configuration
 st.set_page_config(
@@ -249,20 +260,46 @@ if 'run_quick_simulation' in st.session_state and st.session_state.run_quick_sim
         # Clear the quick simulation flags
         st.session_state.run_quick_simulation = False
         del st.session_state.quick_ticker
+    else:
+        # Clear invalid state
+        st.session_state.run_quick_simulation = False
 
 # Main content area
 # Main content area
 if run_simulation or (st.session_state.get('simulation_run', False) and st.session_state.get('last_results') is not None):
     # If we're rerunning from session state, use stored data
     if not run_simulation and st.session_state.get('last_results') is not None:
-        # Use stored results
-        stored_results = st.session_state['last_results']
-        data = stored_results['data']
-        stock_info = stored_results['stock_info']
-        ticker = stored_results['ticker']
-        investment_amount = stored_results['investment_amount']
-        start_date = stored_results['start_date']
-        st.subheader(f"📊 Analysis Results for {ticker}")
+        try:
+            # Use stored results with safety checks
+            stored_results = st.session_state['last_results']
+            
+            # Validate stored results have all required keys
+            required_keys = ['data', 'stock_info', 'ticker', 'investment_amount', 'start_date']
+            if all(key in stored_results for key in required_keys):
+                data = stored_results['data']
+                stock_info = stored_results['stock_info']
+                ticker = stored_results['ticker']
+                investment_amount = stored_results['investment_amount']
+                start_date = stored_results['start_date']
+                st.subheader(f"📊 Analysis Results for {ticker}")
+            else:
+                # Missing keys, force fresh simulation
+                logger.warning("Stored results missing required keys, forcing fresh simulation")
+                run_simulation = True
+                st.session_state.simulation_run = True
+                st.session_state.last_ticker = ticker
+                st.subheader(f"📊 Analysis Results for {ticker}")
+                # Fetch data - progress bar is handled within the function
+                data, stock_info = fetch_stock_data(ticker, start_date)
+        except Exception as e:
+            # Corrupted stored results, force fresh simulation
+            logger.error(f"Error accessing stored results: {str(e)}")
+            run_simulation = True
+            st.session_state.simulation_run = True
+            st.session_state.last_ticker = ticker
+            st.subheader(f"📊 Analysis Results for {ticker}")
+            # Fetch data - progress bar is handled within the function
+            data, stock_info = fetch_stock_data(ticker, start_date)
     else:
         # Fresh simulation run
         st.session_state.simulation_run = True
@@ -295,9 +332,14 @@ if run_simulation or (st.session_state.get('simulation_run', False) and st.sessi
         for i, alt_ticker in enumerate(popular_tickers):
             with cols[i]:
                 if st.button(alt_ticker, key=f"alt_{alt_ticker}"):
-                    # Set the ticker directly and trigger simulation
-                    st.session_state.quick_ticker = alt_ticker
-                    st.session_state.run_quick_simulation = True
+                    try:
+                        # Set the ticker directly and trigger simulation
+                        st.session_state.quick_ticker = alt_ticker
+                        st.session_state.run_quick_simulation = True
+                        logger.info(f"Quick simulation triggered for {alt_ticker}")
+                    except Exception as e:
+                        logger.error(f"Error setting quick ticker {alt_ticker}: {str(e)}")
+                        st.error(f"Error switching to {alt_ticker}. Please try again.")
     else:
         # Store results in session state only for fresh simulations
         if run_simulation:
